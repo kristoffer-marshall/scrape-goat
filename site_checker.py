@@ -1,0 +1,322 @@
+import requests
+import os
+import random
+import argparse
+import re
+import csv
+import urllib3
+from urllib.parse import urlparse
+from bs4 import BeautifulSoup
+from datetime import datetime
+from pynput import keyboard
+import colorama
+from colorama import Fore, Style
+
+# --- Configuration ---
+DEFAULT_DOMAINS_FILE = 'current-federal.csv'
+WORDS_FILE = 'words.txt'
+MATCHES_FILE = 'matches.txt'
+NO_MATCHES_FILE = 'no_matches.txt'
+ERRORS_FILE = 'errors.txt'
+LIST_URL = 'https://raw.githubusercontent.com/cisagov/dotgov-data/main/current-federal.csv'
+
+# --- Global flag to control the main loop ---
+script_running = True
+
+def on_press(key):
+    """Callback function to handle key presses from the listener."""
+    global script_running
+    if key == keyboard.Key.esc:
+        print("\n[!] Escape key pressed. Stopping the script gracefully after this domain...")
+        script_running = False
+        return False  # Stop the listener thread
+
+def count_csv_entries(filename):
+    """Counts the number of data rows in a CSV file, skipping the header."""
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            next(reader)  # Skip header
+            return sum(1 for row in reader if row)
+    except (FileNotFoundError, StopIteration):
+        return 0
+
+def update_domain_list(filename, url):
+    """Downloads the latest domain list and reports changes in entry count."""
+    print(f"-> Checking for domain list updates from {url}...")
+    
+    original_entry_count = count_csv_entries(filename)
+    if original_entry_count > 0:
+        print(f"-> Existing file '{filename}' contains {original_entry_count} entries.")
+
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+        
+        with open(filename, 'w', encoding='utf-8', newline='') as f:
+            f.write(response.text)
+        
+        print(f"-> Successfully downloaded and saved the list to {filename}.")
+        
+        new_entry_count = count_csv_entries(filename)
+        
+        if original_entry_count > 0:
+            change = new_entry_count - original_entry_count
+            if change > 0:
+                print(f"-> {change} entries were added to the list (new total: {new_entry_count}).")
+            elif change < 0:
+                print(f"-> {abs(change)} entries were removed from the list (new total: {new_entry_count}).")
+            else:
+                print(f"-> The number of entries remains the same ({new_entry_count}).")
+        else:
+            print(f"-> The new list contains {new_entry_count} entries.")
+
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"{Fore.RED}[ERROR] Could not download the list: {e}")
+        return False
+
+
+def get_base_domain(url):
+    """Extracts the base domain (e.g., 'example.com') from a full URL."""
+    try:
+        netloc = urlparse(url).netloc
+        # Simple heuristic for base domain
+        parts = netloc.split('.')
+        if len(parts) > 1:
+            return f"{parts[-2]}.{parts[-1]}"
+        return netloc
+    except:
+        return None
+
+def load_domains_from_csv(filename):
+    """Reads domains from the first column of a CSV file, skipping the header."""
+    domains = []
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            print(f"-> Reading domains from CSV '{filename}' (using column '{header[0]}').")
+            for row in reader:
+                if row:
+                    domain = row[0].strip().lower()
+                    if domain:
+                        domains.append(domain)
+        return domains
+    except Exception as e:
+        print(f"Error reading CSV {filename}: {e}")
+        return None
+
+def read_file_lines(filename):
+    """Reads lines from a simple text file and returns them as a list."""
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        print(f"{Fore.RED}Error: {filename} not found.")
+        return None
+
+def load_domains(filename):
+    """Loads domains from a file, auto-detecting .csv or .txt format."""
+    if not os.path.exists(filename):
+        print(f"{Fore.RED}Error: Input file '{filename}' not found.")
+        if filename == DEFAULT_DOMAINS_FILE:
+            print("-> You can run the script with the -u flag to download it.")
+        return None
+    if filename.lower().endswith('.csv'):
+        return load_domains_from_csv(filename)
+    elif filename.lower().endswith('.txt'):
+        print(f"-> Reading domains from text file '{filename}'.")
+        return read_file_lines(filename)
+    else:
+        print(f"{Fore.RED}Error: Unsupported file format for '{filename}'. Please use a .csv or .txt file.")
+        return None
+
+def get_response(url):
+    """
+    Attempts to get a response from a URL, handling SSL errors gracefully.
+    Returns a tuple: (response_object, ssl_note, error_message).
+    """
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'}
+    ssl_note = None
+    try:
+        response = requests.get(url, headers=headers, timeout=10, verify=True)
+        response.raise_for_status()
+        return response, None, None
+    except requests.exceptions.SSLError as e:
+        ssl_note = f"SSL verification failed ({e}), but proceeding with the scan."
+        try:
+            response = requests.get(url, headers=headers, timeout=10, verify=False)
+            response.raise_for_status()
+            return response, ssl_note, None
+        except requests.exceptions.RequestException as e_retry:
+            return None, ssl_note, str(e_retry)
+    except requests.exceptions.RequestException as e_other:
+        return None, None, str(e_other)
+
+def find_words_in_response(response, words_to_find):
+    """Parses a response object's text to find elements containing specific words."""
+    found_matches = []
+    soup = BeautifulSoup(response.text, 'html.parser')
+    unique_element_texts = set()
+    for phrase in words_to_find:
+        text_nodes = soup.find_all(string=re.compile(re.escape(phrase), re.IGNORECASE))
+        for text_node in text_nodes:
+            parent_element = text_node.find_parent()
+            if parent_element:
+                element_text = parent_element.get_text(separator=' ', strip=True)
+                if element_text and element_text not in unique_element_texts:
+                    found_matches.append((phrase, element_text))
+                    unique_element_texts.add(element_text)
+    return found_matches
+
+def create_example_file(filename, content):
+    """Creates a file with example content if it doesn't exist."""
+    if not os.path.exists(filename):
+        print(f"{filename} not found. Creating an example file.")
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+def main():
+    """Main function to run the website checker."""
+    colorama.init(autoreset=True)
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    parser = argparse.ArgumentParser(description="Scan websites for keywords and phrases from a file.")
+    parser.add_argument('-i', '--input', type=str, help='Specify a custom input file for domains (.csv or .txt).')
+    parser.add_argument('-o', '--in-order', action='store_true', help='Scan domains in the order they appear in the file (disables default randomization).')
+    parser.add_argument('-c', '--no-color', action='store_true', help='Disable colorized output in the console.')
+    parser.add_argument('-u', '--update-list', action='store_true', help=f'Download the latest federal domains list to {DEFAULT_DOMAINS_FILE}.')
+    parser.add_argument('-s', '--subdomains', action='store_true', help='Treat subdomains as separate sites instead of rolling them up to the base domain for deduplication.')
+    parser.add_argument('--clobber', action='store_true', help='Overwrite (clobber) the output files instead of appending.')
+    args = parser.parse_args()
+    
+    if args.update_list:
+        update_domain_list(DEFAULT_DOMAINS_FILE, LIST_URL)
+        return
+
+    listener = keyboard.Listener(on_press=on_press)
+    listener.start()
+
+    print("--- Website Keyword Checker ---")
+    print("-> Press the 'Esc' key at any time to stop the scan.")
+
+    create_example_file(WORDS_FILE, "Privacy\nSecurity\nExample Domain\nTerms of Service")
+    
+    input_file = args.input if args.input else DEFAULT_DOMAINS_FILE
+    domains = load_domains(input_file)
+    words = read_file_lines(WORDS_FILE)
+
+    if domains is None or words is None:
+        print("Exiting due to missing files.")
+        return
+
+    if not args.in_order:
+        print("-> Randomizing the domain list (default behavior). Use --in-order to disable.")
+        random.shuffle(domains)
+    else:
+        print("-> Scanning domains in order as requested.")
+
+    if args.clobber:
+        print("-> Clobbering (overwriting) previous output files as requested.")
+        open(MATCHES_FILE, 'w').close()
+        open(NO_MATCHES_FILE, 'w').close()
+        open(ERRORS_FILE, 'w').close()
+    else:
+        print("-> Appending to existing output files (use --clobber to overwrite).")
+
+    print(f"\nScanning {len(domains)} domains for {len(words)} keywords/phrases...\n")
+
+    sites_with_hits = 0
+    scanned_count = 0
+    scanned_sites = set()
+
+    for i, initial_domain in enumerate(domains, 1):
+        if not script_running:
+            break
+        scanned_count = i
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{i}/{len(domains)}] Scanning {initial_domain}...")
+
+        response, ssl_note, err_https = get_response(f"https://{initial_domain}")
+        err_http = None
+
+        if response is None:
+            response, _, err_http = get_response(f"http://{initial_domain}")
+
+        if ssl_note:
+            print(f"  -> [NOTE] {ssl_note}")
+            with open(ERRORS_FILE, 'a', encoding='utf-8') as f:
+                f.write(f"{timestamp} - Domain: {initial_domain}\n  - SSL NOTE: {ssl_note}\n\n")
+
+        if response is None:
+            with open(ERRORS_FILE, 'a', encoding='utf-8') as f:
+                f.write(f"{timestamp} - Domain: {initial_domain} (Connection Failure)\n")
+                if err_https: f.write(f"  - HTTPS Error: {err_https}\n")
+                if err_http: f.write(f"  - HTTP Error: {err_http}\n")
+                f.write("\n")
+            print(f"  -> [ERROR] Could not connect to {initial_domain} on either protocol.")
+            continue
+
+        final_url = response.url
+        
+        if args.subdomains:
+            # Use the full hostname (e.g., 'www.example.gov') for deduplication
+            scan_key = urlparse(final_url).netloc
+            key_type = "full domain"
+        else:
+            # Default: use just the base domain (e.g., 'example.gov') for deduplication
+            scan_key = get_base_domain(final_url)
+            key_type = "base domain"
+        
+        if not scan_key:
+             print(f"  -> [ERROR] Could not parse final domain from {final_url}")
+             continue
+
+        if scan_key in scanned_sites:
+            print(f"  -> [SKIP] {initial_domain} resolves to the already scanned {key_type}: {scan_key}")
+            continue
+        
+        scanned_sites.add(scan_key)
+
+        matches = find_words_in_response(response, words)
+        
+        final_base_domain_for_output = get_base_domain(final_url)
+
+        if matches:
+            sites_with_hits += 1
+            protocol = urlparse(response.url).scheme.upper()
+            print(f"  -> [MATCH] Found keywords on {initial_domain} (final: {final_base_domain_for_output}) via {protocol}.")
+            
+            with open(MATCHES_FILE, 'a', encoding='utf-8') as f:
+                header = f"{timestamp} - {final_base_domain_for_output} ({initial_domain}):\n"
+                f.write(header)
+                for phrase, element_text in matches:
+                    f.write(f"  - [{phrase}]: {element_text}\n")
+                    if not args.no_color:
+                        pattern = re.compile(re.escape(phrase), re.IGNORECASE)
+                        colored_text = pattern.sub(lambda m: f"{Fore.GREEN}{m.group(0)}{Style.RESET_ALL}", element_text)
+                        print(f"    - [{phrase}]: {colored_text}")
+                    else:
+                        print(f"    - [{phrase}]: {element_text}")
+                f.write("\n")
+        else:
+            with open(NO_MATCHES_FILE, 'a', encoding='utf-8') as f:
+                f.write(f"{timestamp} - {final_base_domain_for_output} ({initial_domain})\n")
+            print(f"  -> [NO MATCH] Scanned {initial_domain}, but no keywords were found.")
+    
+    if not script_running:
+        print("\n--- Scan Interrupted by User ---")
+    else:
+        print("\n--- Scan Complete ---")
+
+    print(f"Found keywords/phrases on {sites_with_hits} out of {scanned_count} sites scanned.")
+    print(f"Results have been saved to the following files:")
+    print(f"- {MATCHES_FILE}")
+    print(f"- {NO_MATCHES_FILE}")
+    print(f"- {ERRORS_FILE}")
+
+if __name__ == "__main__":
+    main()
+
+
