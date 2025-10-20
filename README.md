@@ -9,13 +9,13 @@ It's an ideal tool for researchers, compliance auditors, or anyone needing to ve
 * **Contextual Extraction**: Instead of just reporting a match, it extracts the full text of the HTML element where the keyword was found, providing valuable context.  
 * **Flexible Domain Input**: Accepts a list of domains from either a .csv (parsing the first column) or a simple .txt file.  
 * **Automated List Updates**: Can download and update its default domain list (current-federal.csv) directly from the CISA .gov domain repository on GitHub.  
-* **Intelligent Deduplication**: By default, it avoids scanning the same base domain multiple times (e.g., treats www.example.gov and api.example.gov as example.gov). This can be disabled to treat each subdomain as a unique site.  
+* **Intelligent Deduplication**: Avoids scanning the same base domain multiple times (e.g., www.example.gov and api.example.gov are both treated as example.gov).  
 * **Robust Scanning**:  
   * Automatically follows HTTP/HTTPS redirects.  
   * Bypasses SSL/TLS verification errors to analyze content, logging the error for reference.  
   * Tries both https:// and http:// protocols for each domain.  
 * **Organized, Real-Time Logging**:  
-  * Appends results to matches.txt, no\_matches.txt, and errors.txt in real-time.  
+  * Appends results to matches.txt, no\_matches.txt, and errors.txt in real-time by default.  
   * Includes a \--clobber option to overwrite previous logs.  
   * Timestamps every entry for clear record-keeping.  
 * **User-Friendly Operation**:  
@@ -27,8 +27,8 @@ It's an ideal tool for researchers, compliance auditors, or anyone needing to ve
 ## **Installation**
 
 1. **Python**: Ensure you have Python 3.6+ installed.  
-2. **Dependencies**: Install the required Python libraries using pip.  
-   pip install requests beautifulsoup4 pynput colorama
+2. **Dependencies**: Install the required Python libraries using the requirements.txt file.  
+   pip install \-r requirements.txt
 
 ## **Usage**
 
@@ -51,14 +51,14 @@ It's an ideal tool for researchers, compliance auditors, or anyone needing to ve
 
 ### **Command-Line Arguments**
 
-| Flag | Alias | Description |  
-| \--help | \-h | Show the help message and exit. |  
-| \--input \[FILENAME\] | \-i | Specify a custom input file for domains (.csv or .txt). |  
-| \--update-list | \-u | Download/update current-federal.csv from the official CISA repository and exit. |  
-| \--in-order | \-o | Scan domains sequentially as they appear in the file (disables default randomization). |  
-| \--subdomains | \-s | Treat subdomains as separate sites for deduplication purposes. |  
-| \--no-color | \-c | Disable colorized output in the console. |  
-| \--clobber | | Overwrite (clobber) the output files instead of appending to them. |
+| Flag | Alias | Description |
+| :---- | :---- | :---- |
+| \--help | \-h | Show the help message and exit. |
+| \--input \[FILENAME\] | \-i | Specify a custom input file for domains (.csv or .txt). |
+| \--update-list | \-u | Download/update current-federal.csv from the official CISA repository and exit. |
+| \--in-order | \-o | Scan domains sequentially as they appear in the file (disables default randomization). |
+| \--no-color | \-c | Disable colorized output in the console. |
+| \--clobber |  | Overwrite (clobber) the output files instead of appending to them. |
 
 ### **Output Files**
 

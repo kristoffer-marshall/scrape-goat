@@ -8,7 +8,6 @@ import urllib3
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from datetime import datetime
-from pynput import keyboard
 import colorama
 from colorama import Fore, Style
 
@@ -19,17 +18,6 @@ MATCHES_FILE = 'matches.txt'
 NO_MATCHES_FILE = 'no_matches.txt'
 ERRORS_FILE = 'errors.txt'
 LIST_URL = 'https://raw.githubusercontent.com/cisagov/dotgov-data/main/current-federal.csv'
-
-# --- Global flag to control the main loop ---
-script_running = True
-
-def on_press(key):
-    """Callback function to handle key presses from the listener."""
-    global script_running
-    if key == keyboard.Key.esc:
-        print("\n[!] Escape key pressed. Stopping the script gracefully after this domain...")
-        script_running = False
-        return False  # Stop the listener thread
 
 def count_csv_entries(filename):
     """Counts the number of data rows in a CSV file, skipping the header."""
@@ -78,12 +66,13 @@ def update_domain_list(filename, url):
 
 
 def get_base_domain(url):
-    """Extracts the base domain (e.g., 'example.com') from a full URL."""
+    """Extracts the base domain (e.g., 'example.gov') from a full URL."""
     try:
         netloc = urlparse(url).netloc
-        # Simple heuristic for base domain
         parts = netloc.split('.')
-        if len(parts) > 1:
+        if len(parts) > 2 and parts[-2] in ('co', 'com', 'org', 'net', 'gov', 'ac', 'edu'):
+             return f"{parts[-3]}.{parts[-2]}.{parts[-1]}"
+        elif len(parts) > 1:
             return f"{parts[-2]}.{parts[-1]}"
         return netloc
     except:
@@ -140,13 +129,13 @@ def get_response(url):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'}
     ssl_note = None
     try:
-        response = requests.get(url, headers=headers, timeout=10, verify=True)
+        response = requests.get(url, headers=headers, timeout=10, verify=True, allow_redirects=True)
         response.raise_for_status()
         return response, None, None
     except requests.exceptions.SSLError as e:
         ssl_note = f"SSL verification failed ({e}), but proceeding with the scan."
         try:
-            response = requests.get(url, headers=headers, timeout=10, verify=False)
+            response = requests.get(url, headers=headers, timeout=10, verify=False, allow_redirects=True)
             response.raise_for_status()
             return response, ssl_note, None
         except requests.exceptions.RequestException as e_retry:
@@ -187,7 +176,6 @@ def main():
     parser.add_argument('-o', '--in-order', action='store_true', help='Scan domains in the order they appear in the file (disables default randomization).')
     parser.add_argument('-c', '--no-color', action='store_true', help='Disable colorized output in the console.')
     parser.add_argument('-u', '--update-list', action='store_true', help=f'Download the latest federal domains list to {DEFAULT_DOMAINS_FILE}.')
-    parser.add_argument('-s', '--subdomains', action='store_true', help='Treat subdomains as separate sites instead of rolling them up to the base domain for deduplication.')
     parser.add_argument('--clobber', action='store_true', help='Overwrite (clobber) the output files instead of appending.')
     args = parser.parse_args()
     
@@ -195,11 +183,8 @@ def main():
         update_domain_list(DEFAULT_DOMAINS_FILE, LIST_URL)
         return
 
-    listener = keyboard.Listener(on_press=on_press)
-    listener.start()
-
-    print("--- Website Keyword Checker ---")
-    print("-> Press the 'Esc' key at any time to stop the scan.")
+    print("--- Scrape Goat: Website Keyword Checker ---")
+    print("-> Press Ctrl+C at any time to stop the scan.")
 
     create_example_file(WORDS_FILE, "Privacy\nSecurity\nExample Domain\nTerms of Service")
     
@@ -229,92 +214,88 @@ def main():
 
     sites_with_hits = 0
     scanned_count = 0
-    scanned_sites = set()
+    scanned_base_domains = set()
 
-    for i, initial_domain in enumerate(domains, 1):
-        if not script_running:
-            break
-        scanned_count = i
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{i}/{len(domains)}] Scanning {initial_domain}...")
+    try:
+        for i, initial_domain in enumerate(domains, 1):
+            scanned_count = i
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{i}/{len(domains)}] Scanning {initial_domain}...")
 
-        response, ssl_note, err_https = get_response(f"https://{initial_domain}")
-        err_http = None
+            response, ssl_note, err_https = get_response(f"https://{initial_domain}")
+            err_http = None
 
-        if response is None:
-            response, _, err_http = get_response(f"http://{initial_domain}")
+            if response is None:
+                # If HTTPS fails, try HTTP
+                response, _, err_http = get_response(f"http://{initial_domain}")
 
-        if ssl_note:
-            print(f"  -> [NOTE] {ssl_note}")
-            with open(ERRORS_FILE, 'a', encoding='utf-8') as f:
-                f.write(f"{timestamp} - Domain: {initial_domain}\n  - SSL NOTE: {ssl_note}\n\n")
+            # Log any SSL warnings that occurred during the HTTPS attempt
+            if ssl_note:
+                print(f"  -> [NOTE] {ssl_note}")
+                with open(ERRORS_FILE, 'a', encoding='utf-8') as f:
+                    f.write(f"{timestamp} - {initial_domain} - SSL NOTE: {ssl_note}\n")
 
-        if response is None:
-            with open(ERRORS_FILE, 'a', encoding='utf-8') as f:
-                f.write(f"{timestamp} - Domain: {initial_domain} (Connection Failure)\n")
-                if err_https: f.write(f"  - HTTPS Error: {err_https}\n")
-                if err_http: f.write(f"  - HTTP Error: {err_http}\n")
-                f.write("\n")
-            print(f"  -> [ERROR] Could not connect to {initial_domain} on either protocol.")
-            continue
+            # If both attempts failed, log a connection error and continue
+            if response is None:
+                with open(ERRORS_FILE, 'a', encoding='utf-8') as f:
+                    f.write(f"{timestamp} - {initial_domain} - Connection Failure\n")
+                    if err_https: f.write(f"  - HTTPS Error: {err_https}\n")
+                    if err_http: f.write(f"  - HTTP Error: {err_http}\n")
+                print(f"  -> [ERROR] Could not connect to {initial_domain} on either protocol.")
+                continue
 
-        final_url = response.url
-        
-        if args.subdomains:
-            # Use the full hostname (e.g., 'www.example.gov') for deduplication
-            scan_key = urlparse(final_url).netloc
-            key_type = "full domain"
-        else:
-            # Default: use just the base domain (e.g., 'example.gov') for deduplication
-            scan_key = get_base_domain(final_url)
-            key_type = "base domain"
-        
-        if not scan_key:
-             print(f"  -> [ERROR] Could not parse final domain from {final_url}")
-             continue
-
-        if scan_key in scanned_sites:
-            print(f"  -> [SKIP] {initial_domain} resolves to the already scanned {key_type}: {scan_key}")
-            continue
-        
-        scanned_sites.add(scan_key)
-
-        matches = find_words_in_response(response, words)
-        
-        final_base_domain_for_output = get_base_domain(final_url)
-
-        if matches:
-            sites_with_hits += 1
-            protocol = urlparse(response.url).scheme.upper()
-            print(f"  -> [MATCH] Found keywords on {initial_domain} (final: {final_base_domain_for_output}) via {protocol}.")
+            final_url = response.url
             
-            with open(MATCHES_FILE, 'a', encoding='utf-8') as f:
-                header = f"{timestamp} - {final_base_domain_for_output} ({initial_domain}):\n"
-                f.write(header)
-                for phrase, element_text in matches:
-                    f.write(f"  - [{phrase}]: {element_text}\n")
-                    if not args.no_color:
-                        pattern = re.compile(re.escape(phrase), re.IGNORECASE)
-                        colored_text = pattern.sub(lambda m: f"{Fore.GREEN}{m.group(0)}{Style.RESET_ALL}", element_text)
-                        print(f"    - [{phrase}]: {colored_text}")
-                    else:
-                        print(f"    - [{phrase}]: {element_text}")
-                f.write("\n")
-        else:
-            with open(NO_MATCHES_FILE, 'a', encoding='utf-8') as f:
-                f.write(f"{timestamp} - {final_base_domain_for_output} ({initial_domain})\n")
-            print(f"  -> [NO MATCH] Scanned {initial_domain}, but no keywords were found.")
-    
-    if not script_running:
-        print("\n--- Scan Interrupted by User ---")
-    else:
-        print("\n--- Scan Complete ---")
+            # Always use the base domain for deduplication
+            scan_key = get_base_domain(final_url)
+            
+            if not scan_key:
+                 print(f"  -> [ERROR] Could not parse final domain from {final_url}")
+                 with open(ERRORS_FILE, 'a', encoding='utf-8') as f:
+                    f.write(f"{timestamp} - {initial_domain} - Could not parse final domain from {final_url}\n")
+                 continue
 
-    print(f"Found keywords/phrases on {sites_with_hits} out of {scanned_count} sites scanned.")
-    print(f"Results have been saved to the following files:")
-    print(f"- {MATCHES_FILE}")
-    print(f"- {NO_MATCHES_FILE}")
-    print(f"- {ERRORS_FILE}")
+            if scan_key in scanned_base_domains:
+                print(f"  -> [SKIP] {initial_domain} resolves to the already scanned base domain: {scan_key}")
+                continue
+            
+            scanned_base_domains.add(scan_key)
+
+            matches = find_words_in_response(response, words)
+            
+            if matches:
+                sites_with_hits += 1
+                protocol = urlparse(response.url).scheme.upper()
+                print(f"  -> [MATCH] Found keywords on {initial_domain} (final: {scan_key}) via {protocol}.")
+                
+                with open(MATCHES_FILE, 'a', encoding='utf-8') as f:
+                    header = f"{timestamp} - {scan_key} ({initial_domain}):\n"
+                    f.write(header)
+                    for phrase, element_text in matches:
+                        f.write(f"  - [{phrase}]: {element_text}\n")
+                        if not args.no_color:
+                            pattern = re.compile(re.escape(phrase), re.IGNORECASE)
+                            colored_text = pattern.sub(lambda m: f"{Fore.GREEN}{m.group(0)}{Style.RESET_ALL}", element_text)
+                            print(f"    - [{phrase}]: {colored_text}")
+                        else:
+                            print(f"    - [{phrase}]: {element_text}")
+                    f.write("\n")
+            else:
+                with open(NO_MATCHES_FILE, 'a', encoding='utf-8') as f:
+                    f.write(f"{timestamp} - {scan_key} ({initial_domain})\n")
+                print(f"  -> [NO MATCH] Scanned {initial_domain}, but no keywords were found.")
+    
+    except KeyboardInterrupt:
+        print("\n\n--- Scan Interrupted by User (Ctrl+C) ---")
+    
+    finally:
+        print("\n--- Scan Summary ---")
+        print(f"Found keywords/phrases on {sites_with_hits} out of {scanned_count} sites scanned.")
+        print(f"Results have been saved to the following files:")
+        print(f"- {MATCHES_FILE}")
+        print(f"- {NO_MATCHES_FILE}")
+        print(f"- {ERRORS_FILE}")
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,76 @@
+2025-10-15 18:52:21 - whitehouse.gov (maha.gov):
+  - [democrats have shut down]: var WHAnnouncementBarData = {"enabled":"1","text":"Democrat Shutdown is Imminent","link":"https:\/\/whitehouse.gov\/government-shutdown-clock\/","end":"2025-10-01T04:00:00+00:00","endText":"Democrats Have Shut Down the Government","countup":"1"};
+
+2025-10-15 18:55:01 - samhsa.gov:443 (samhsa.gov):
+  - [democrat-led]: Mission-critical activities of HHS will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 19:06:30 - whitehouse.gov (omb.gov):
+  - [democrats have shut down]: var WHAnnouncementBarData = {"enabled":"1","text":"Democrat Shutdown is Imminent","link":"https:\/\/whitehouse.gov\/government-shutdown-clock\/","end":"2025-10-01T04:00:00+00:00","endText":"Democrats Have Shut Down the Government","countup":"1"};
+
+2025-10-15 19:09:25 - health.gov (health.gov):
+  - [democrat-led]: Mission-critical activities of HHS will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 19:10:58 - womenshealth.gov (womenshealth.gov):
+  - [democrat-led]: Mission-critical activities of HHS will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 19:12:05 - ada.gov (ada.gov):
+  - [democrats have shut down]: Democrats have shut down the government. Department of Justice websites are not currently regularly updated.
+
+2025-10-15 19:12:12 - hud.gov (disasterhousing.gov):
+  - [radical left]: The Radical Left in Congress shut down the government. HUD will use available resources to help Americans in need.
+
+2025-10-15 19:12:32 - ojp.gov (ojp.gov):
+  - [democrats have shut down]: Democrats have shut down the government. Department of Justice websites are not currently regularly updated. Please refer to the
+
+2025-10-15 19:14:16 - treasury.gov (ustreas.gov):
+  - [radical left]: The radical left has chosen to shut down the United States government in the name of reckless spending and obstructionism. As a result, the U.S. Department of the Treasury’s websites will only be sporadically updated until this shutdown concludes. Please refer to Treasury’s contingency plans for more information.
+
+2025-10-15 19:14:33 - state.gov (pepfar.gov):
+  - [democrat-led]: Due to the Democrat-led shutdown, website updates will be limited until full operations resume.
+
+2025-10-15 19:18:12 - usphs.gov:443 (usphs.gov):
+  - [democrat-led]: Mission-critical activities of HHS will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 19:20:00 - hhs.gov (aspr.gov):
+  - [democrat-led]: Mission-critical activities of HHS will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 19:21:36 - ahrq.gov (guideline.gov):
+  - [democrat-led]: Mission-critical activities of AHRQ will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 19:23:59 - atf.gov (atf.gov):
+  - [democrats have shut down]: Democrats have shut down the government. Department of Justice websites are not currently regularly updated. Please refer to the
+
+2025-10-15 19:27:11 - ovcttac.gov (ovcttac.gov):
+  - [democrats have shut down]: Democrats have shut down the government. Department of Justice websites are not currently regularly updated. Please refer to the Department of Justice's contingency plan for more information.
+
+2025-10-15 19:32:19 - cms.gov (cms.gov):
+  - [democrat-led]: Due to the Democrat-led shutdown, updates to information on this website may be limited or delayed. Mission-critical activities of CMS will continue as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 19:41:19 - hiv.gov:443 (hiv.gov):
+  - [democrat-led]: Mission-critical activities of HHS will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 19:45:06 - acf.gov (acf.gov):
+  - [democrat-led]: Mission-critical activities of ACF will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 19:45:10 - usmarshals.gov (usmarshals.gov):
+  - [democrats have shut down]: Democrats have shut down the government. Department of Justice websites are not currently regularly updated. Please refer to the Department of Justice's contingency plan for more information.
+
+2025-10-15 19:48:22 - farmers.gov (farmers.gov):
+  - [radical left]: Due to the Radical Left Democrat shutdown, this government website will not be updated during the funding lapse. President Trump has made it clear he wants to keep the government open and support those who feed, fuel, and clothe the American people.
+
+2025-10-15 19:49:19 - simplereport.gov (simplereport.gov):
+  - [democrat-led]: The Trump Administration is working to reopen the government for the American people. Mission-critical activities of CDC will continue during the Democrat-led government shutdown. Certain federal government activities have ceased due to a lack of appropriated funding. During the government shutdown, only web sites supporting excepted functions will be updated. As a result, the information on this website may not be up to date and the agency may not be able to respond to inquiries.
+
+2025-10-15 19:55:06 - hrsa.gov (hrsa.gov):
+  - [democrat-led]: Mission-critical activities of HRSA will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 20:03:36 - foia.gov (foia.gov):
+  - [democrats have shut down]: Democrats have shut down the government. Department of Justice websites are not currently regularly updated.
+    Please refer to the Department of Justice’s contingency plan for more information. Please note that FOIA requests that fail to submit to agencies will not be resubmitted until funding is re-established.
+
+2025-10-15 20:24:08 - medicalcountermeasures.gov (medicalcountermeasures.gov):
+  - [democrat-led]: Mission-critical activities of HHS will continue during the Democrat-led government shutdown. Please use this site as a resource as the Trump Administration works to reopen the government for the American people.
+
+2025-10-15 20:29:35 - forestsandrangelands.gov (forestsandrangelands.gov):
+  - [radical left]: The Radical Left Democrats shut down the government. This government website will be updated periodically during the funding lapse for mission critical functions. President Trump has made it clear he wants to keep the government open and support those who feed, fuel, and clothe the American people.
+
