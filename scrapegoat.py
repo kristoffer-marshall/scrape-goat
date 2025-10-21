@@ -14,10 +14,11 @@ import configparser
 
 # --- Configuration ---
 CONFIG_FILE = 'config.ini'
-# WORDS_FILE = 'words.txt' # No longer needed
-MATCHES_FILE = 'matches.log'
-NO_MATCHES_FILE = 'no_matches.log'
-ERRORS_FILE = 'errors.log'
+LOGS_DIR = 'logs'
+LISTS_DIR = 'domain-lists'
+MATCHES_FILE = os.path.join(LOGS_DIR, 'matches.log')
+NO_MATCHES_FILE = os.path.join(LOGS_DIR, 'no_matches.log')
+ERRORS_FILE = os.path.join(LOGS_DIR, 'errors.log')
 
 def load_config(config_filename):
     """Parses the INI configuration file."""
@@ -32,7 +33,10 @@ def get_default_list_name(config):
     for section in config.sections():
         if config.has_option(section, 'default') and config.getboolean(section, 'default'):
             return section
-    return None # No default found
+    # If no default is marked, return the first list name as a fallback
+    if config.sections():
+        return config.sections()[0]
+    return None
 
 def count_csv_entries(filename):
     """Counts the number of data rows in a CSV file, skipping the header."""
@@ -41,7 +45,7 @@ def count_csv_entries(filename):
             reader = csv.reader(f)
             next(reader)  # Skip header
             return sum(1 for row in reader if row)
-    except (FileNotFoundError, StopIteration):
+    except (FileNotFoundError, StopIteration, csv.Error):
         return 0
 
 def update_domain_list(filename, url):
@@ -123,8 +127,7 @@ def read_file_lines(filename):
 def load_domains(filename):
     """Loads domains from a file, auto-detecting .csv or .txt format."""
     if not os.path.exists(filename):
-        print(f"{Fore.YELLOW}Warning: Input file '{filename}' not found.")
-        print("-> You can run the script with the -u flag to download it.")
+        print(f"{Fore.RED}Error: Input file '{filename}' not found after check.")
         return None
         
     if filename.lower().endswith('.csv'):
@@ -166,7 +169,12 @@ def get_response(url):
 def find_words_in_response(response, words_to_find):
     """Parses a response object's text to find elements containing specific words."""
     found_matches = []
-    soup = BeautifulSoup(response.text, 'html.parser')
+    # Use lxml for better performance if available, otherwise fallback to html.parser
+    try:
+        soup = BeautifulSoup(response.text, 'lxml')
+    except:
+        soup = BeautifulSoup(response.text, 'html.parser')
+
     unique_element_texts = set()
     for phrase in words_to_find:
         text_nodes = soup.find_all(string=re.compile(re.escape(phrase), re.IGNORECASE))
@@ -183,6 +191,7 @@ def create_example_file(filename, content):
     """Creates a file with example content if it doesn't exist."""
     if not os.path.exists(filename):
         print(f"{filename} not found. Creating an example file.")
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(content)
 
@@ -191,15 +200,24 @@ def main():
     colorama.init(autoreset=True)
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+    # --- Directory Setup ---
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    os.makedirs(LISTS_DIR, exist_ok=True)
+
     config = load_config(CONFIG_FILE)
     if config is None:
         print(f"{Fore.RED}Error: Configuration file '{CONFIG_FILE}' not found or is empty.")
         create_example_file(
             CONFIG_FILE,
+            '# Scrape Goat Configuration\n\n'
             '[federal]\n'
             'url = https://raw.githubusercontent.com/cisagov/dotgov-data/main/current-federal.csv\n'
             'default = yes\n'
-            'keywords = Privacy, Security, "Terms of Service"\n'
+            'keywords = Privacy, Security, "Terms of Service"\n\n'
+            '[tech-news]\n'
+            'url = https://raw.githubusercontent.com/j-c-s/tech-news-aggregator-list/main/feed_list.csv\n'
+            '# Note: this list is not a plain domain list and will require manual parsing if used.\n'
+            'keywords = "vulnerability management", CVE, exploit, patch\n'
         )
         print(f"An example '{CONFIG_FILE}' has been created.")
         return
@@ -207,7 +225,7 @@ def main():
     default_list_name = get_default_list_name(config)
 
     parser = argparse.ArgumentParser(description="Scan websites for keywords and phrases from a file.")
-    parser.add_argument('-i', '--input', type=str, help='Specify a custom local input file (.csv or .txt), overriding the config file.')
+    parser.add_argument('-i', '--input', type=str, help=f'Specify a custom local input file (expected in {LISTS_DIR}/), overriding the config file.')
     parser.add_argument('-l', '--list-name', type=str, default=default_list_name, help=f'Specify the list to use from {CONFIG_FILE}. Defaults to "{default_list_name}".')
     parser.add_argument('-o', '--in-order', action='store_true', help='Scan domains in the order they appear in the file (disables default randomization).')
     parser.add_argument('-c', '--no-color', action='store_true', help='Disable colorized output in the console.')
@@ -216,7 +234,7 @@ def main():
     args = parser.parse_args()
     
     selected_list_name = args.list_name
-    if not config.has_section(selected_list_name):
+    if not selected_list_name or not config.has_section(selected_list_name):
         print(f"{Fore.RED}Error: List name '{selected_list_name}' not found in {CONFIG_FILE}.")
         print(f"Available lists are: {', '.join(config.sections())}")
         return
@@ -229,7 +247,9 @@ def main():
         print(f"{Fore.RED}Error in config section '[{selected_list_name}]': Missing option '{e.option}'.")
         return
 
-    local_filename = f"{selected_list_name}.csv" if url_to_use.endswith('.csv') else f"{selected_list_name}.txt"
+    filename_base = os.path.basename(unquote(urlparse(url_to_use).path))
+    local_filename = os.path.join(LISTS_DIR, filename_base)
+
 
     if args.update_list:
         update_domain_list(local_filename, url_to_use)
@@ -239,11 +259,15 @@ def main():
     print("-> Press Ctrl+C at any time to stop the scan.")
     
     if args.input:
-        print(f"-> Using local override file: '{args.input}'")
-        input_file_to_load = args.input
+        input_file_to_load = os.path.join(LISTS_DIR, args.input)
+        print(f"-> Using local override file: '{input_file_to_load}'")
     else:
         print(f"-> Using list '{selected_list_name}' from config.")
         input_file_to_load = local_filename
+        # If the file for the selected list doesn't exist, download it automatically.
+        if not os.path.exists(input_file_to_load):
+            print(f"-> Local file '{input_file_to_load}' not found for list '{selected_list_name}'.")
+            update_domain_list(local_filename, url_to_use)
 
     domains = load_domains(input_file_to_load)
 
@@ -340,12 +364,11 @@ def main():
     
     finally:
         print("\n--- Scan Summary ---")
-        print(f"Found keywords/phrases on {sites_with_hits} out of {scanned_count} sites scanned.")
-        print(f"Results have been saved to the following files:")
-        print(f"- {MATCHES_FILE}")
-        print(f"- {NO_MATCHES_FILE}")
-        print(f"- {ERRORS_FILE}")
-
+        if scanned_count > 0:
+            print(f"Found keywords/phrases on {sites_with_hits} out of {scanned_count} sites scanned.")
+        else:
+            print("No sites were scanned.")
+        print(f"Results have been saved to the '{LOGS_DIR}/' directory.")
 
 if __name__ == "__main__":
     main()
