@@ -11,13 +11,16 @@ It's an ideal tool for researchers, compliance auditors, or anyone needing to ve
 * **Flexible Domain Input**:  
   * Supports multiple lists defined in config.ini.  
   * Allows for a local file override (.csv or .txt) for quick, one-off scans.  
-* **Automated List Updates**: Can download and update any domain list defined in the configuration file directly from its source URL.  
+* **Automated List Management**:  
+  * Can download and update any domain list from its source URL using the \--update-list flag.  
+  * Automatically fetches a list from its URL if it's not found locally during a normal scan.  
 * **Intelligent Deduplication**: Avoids scanning the same base domain multiple times (e.g., treats www.example.gov and api.example.gov as example.gov).  
 * **Robust Scanning**:  
   * Automatically follows HTTP/HTTPS redirects.  
   * Bypasses SSL/TLS verification errors to analyze content, logging the error for reference.  
   * Tries both https:// and http:// protocols for each domain.  
 * **Organized, Persistent Logging**:  
+  * Saves all output to a logs/ directory.  
   * Appends results to matches.log, no\_matches.log, and errors.log by default.  
   * Includes a \--clobber option to overwrite previous logs.  
   * Timestamps every entry for clear record-keeping.  
@@ -36,21 +39,24 @@ It's an ideal tool for researchers, compliance auditors, or anyone needing to ve
 3. **Configuration**:  
    * Edit the config.ini file to define your domain lists and the keywords you want to search for.  
    * You can add as many list sections (e.g., \[my-custom-list\]) as you need.  
-   * Set default \= yes for the list you want to run when no other is specified.
+   * Set default \= yes for the list you want to run when no other is specified. The script will automatically create domain-lists/ and logs/ directories on first run.
 
 ## **Usage**
 
 Execute the script from your terminal. It will use the default list from your config.ini unless you specify another.  
 \# Run a standard scan using the default list in the config  
+\# If the list file isn't in 'domain-lists/', it will be downloaded automatically.  
 python scrapegoat.py
 
 \# Run a scan using a specific list from the config  
 python scrapegoat.py \--list-name tech-news
 
-\# Update a specific domain list from its source URL  
-python scrapegoat.py \--list-name federal \--update-list
+\# Force an update of a specific domain list from its source URL  
+\# The file will be saved in the 'domain-lists/' directory  
+python scrapegoat.py \--list-name hatch-act \--update-list
 
-\# Use a temporary local file instead of the config and overwrite old logs  
+\# Use a temporary local file (must be in the 'domain-lists/' directory)  
+\# and overwrite old logs  
 python scrapegoat.py \--input my\_temp\_domains.txt \--clobber
 
 ### **Command-Line Arguments**
@@ -59,13 +65,15 @@ python scrapegoat.py \--input my\_temp\_domains.txt \--clobber
 | :---- | :---- | :---- |
 | \--help | \-h | Show the help message and exit. |
 | \--list-name \[NAME\] | \-l | Specify the list to use from config.ini. |
-| \--input \[FILE\] | \-i | **Override config:** Use a custom local input file for domains (.csv or .txt). |
+| \--input \[FILE\] | \-i | **Override config:** Use a custom local input file (must be in domain-lists/) for domains. |
 | \--update-list | \-u | Download/update the selected domain list from its source URL and exit. |
 | \--in-order | \-o | Scan domains sequentially (disables default randomization). |
 | \--no-color | \-c | Disable colorized output in the console. |
-| \--clobber |  | Overwrite (clobber) the output files instead of appending to them. |
+| \--clobber |  | Overwrite (clobber) the output files in the logs/ directory instead of appending to them. |
 
 ### **Output Files**
+
+All output files are located in the logs/ directory.
 
 * **matches.log**: A timestamped list of domains where keywords were found, including the final URL, the initial domain, and the text of the element containing each match.  
 * **no\_matches.log**: A timestamped list of domains that were successfully scanned but contained none of the specified keywords.  
