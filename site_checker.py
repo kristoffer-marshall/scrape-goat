@@ -5,19 +5,34 @@ import argparse
 import re
 import csv
 import urllib3
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 from bs4 import BeautifulSoup
 from datetime import datetime
 import colorama
 from colorama import Fore, Style
+import configparser
 
 # --- Configuration ---
-DEFAULT_DOMAINS_FILE = 'current-federal.csv'
-WORDS_FILE = 'words.txt'
-MATCHES_FILE = 'matches.txt'
-NO_MATCHES_FILE = 'no_matches.txt'
-ERRORS_FILE = 'errors.txt'
-LIST_URL = 'https://raw.githubusercontent.com/cisagov/dotgov-data/main/current-federal.csv'
+CONFIG_FILE = 'config.ini'
+# WORDS_FILE = 'words.txt' # No longer needed
+MATCHES_FILE = 'matches.log'
+NO_MATCHES_FILE = 'no_matches.log'
+ERRORS_FILE = 'errors.log'
+
+def load_config(config_filename):
+    """Parses the INI configuration file."""
+    config = configparser.ConfigParser()
+    if not os.path.exists(config_filename):
+        return None
+    config.read(config_filename)
+    return config
+
+def get_default_list_name(config):
+    """Finds the list marked as default in the config."""
+    for section in config.sections():
+        if config.has_option(section, 'default') and config.getboolean(section, 'default'):
+            return section
+    return None # No default found
 
 def count_csv_entries(filename):
     """Counts the number of data rows in a CSV file, skipping the header."""
@@ -108,10 +123,10 @@ def read_file_lines(filename):
 def load_domains(filename):
     """Loads domains from a file, auto-detecting .csv or .txt format."""
     if not os.path.exists(filename):
-        print(f"{Fore.RED}Error: Input file '{filename}' not found.")
-        if filename == DEFAULT_DOMAINS_FILE:
-            print("-> You can run the script with the -u flag to download it.")
+        print(f"{Fore.YELLOW}Warning: Input file '{filename}' not found.")
+        print("-> You can run the script with the -u flag to download it.")
         return None
+        
     if filename.lower().endswith('.csv'):
         return load_domains_from_csv(filename)
     elif filename.lower().endswith('.txt'):
@@ -120,6 +135,11 @@ def load_domains(filename):
     else:
         print(f"{Fore.RED}Error: Unsupported file format for '{filename}'. Please use a .csv or .txt file.")
         return None
+
+def parse_keywords(keyword_string):
+    """Parses a comma-separated string of keywords, respecting quotes."""
+    return [kw.strip() for kw in csv.reader([keyword_string], skipinitialspace=True).__next__()]
+
 
 def get_response(url):
     """
@@ -171,29 +191,64 @@ def main():
     colorama.init(autoreset=True)
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+    config = load_config(CONFIG_FILE)
+    if config is None:
+        print(f"{Fore.RED}Error: Configuration file '{CONFIG_FILE}' not found or is empty.")
+        create_example_file(
+            CONFIG_FILE,
+            '[federal]\n'
+            'url = https://raw.githubusercontent.com/cisagov/dotgov-data/main/current-federal.csv\n'
+            'default = yes\n'
+            'keywords = Privacy, Security, "Terms of Service"\n'
+        )
+        print(f"An example '{CONFIG_FILE}' has been created.")
+        return
+
+    default_list_name = get_default_list_name(config)
+
     parser = argparse.ArgumentParser(description="Scan websites for keywords and phrases from a file.")
-    parser.add_argument('-i', '--input', type=str, help='Specify a custom input file for domains (.csv or .txt).')
+    parser.add_argument('-i', '--input', type=str, help='Specify a custom local input file (.csv or .txt), overriding the config file.')
+    parser.add_argument('-l', '--list-name', type=str, default=default_list_name, help=f'Specify the list to use from {CONFIG_FILE}. Defaults to "{default_list_name}".')
     parser.add_argument('-o', '--in-order', action='store_true', help='Scan domains in the order they appear in the file (disables default randomization).')
     parser.add_argument('-c', '--no-color', action='store_true', help='Disable colorized output in the console.')
-    parser.add_argument('-u', '--update-list', action='store_true', help=f'Download the latest federal domains list to {DEFAULT_DOMAINS_FILE}.')
+    parser.add_argument('-u', '--update-list', action='store_true', help='Download the latest version of the selected domain list.')
     parser.add_argument('--clobber', action='store_true', help='Overwrite (clobber) the output files instead of appending.')
     args = parser.parse_args()
     
+    selected_list_name = args.list_name
+    if not config.has_section(selected_list_name):
+        print(f"{Fore.RED}Error: List name '{selected_list_name}' not found in {CONFIG_FILE}.")
+        print(f"Available lists are: {', '.join(config.sections())}")
+        return
+    
+    try:
+        url_to_use = config.get(selected_list_name, 'url')
+        keywords_str = config.get(selected_list_name, 'keywords')
+        words = parse_keywords(keywords_str)
+    except configparser.NoOptionError as e:
+        print(f"{Fore.RED}Error in config section '[{selected_list_name}]': Missing option '{e.option}'.")
+        return
+
+    local_filename = f"{selected_list_name}.csv" if url_to_use.endswith('.csv') else f"{selected_list_name}.txt"
+
     if args.update_list:
-        update_domain_list(DEFAULT_DOMAINS_FILE, LIST_URL)
+        update_domain_list(local_filename, url_to_use)
         return
 
     print("--- Scrape Goat: Website Keyword Checker ---")
     print("-> Press Ctrl+C at any time to stop the scan.")
-
-    create_example_file(WORDS_FILE, "Privacy\nSecurity\nExample Domain\nTerms of Service")
     
-    input_file = args.input if args.input else DEFAULT_DOMAINS_FILE
-    domains = load_domains(input_file)
-    words = read_file_lines(WORDS_FILE)
+    if args.input:
+        print(f"-> Using local override file: '{args.input}'")
+        input_file_to_load = args.input
+    else:
+        print(f"-> Using list '{selected_list_name}' from config.")
+        input_file_to_load = local_filename
 
-    if domains is None or words is None:
-        print("Exiting due to missing files.")
+    domains = load_domains(input_file_to_load)
+
+    if domains is None or not words:
+        print("Exiting due to missing domain file or empty keyword list in config.")
         return
 
     if not args.in_order:
@@ -210,7 +265,7 @@ def main():
     else:
         print("-> Appending to existing output files (use --clobber to overwrite).")
 
-    print(f"\nScanning {len(domains)} domains for {len(words)} keywords/phrases...\n")
+    print(f"\nScanning {len(domains)} domains for {len(words)} keywords/phrases from list '{selected_list_name}'...\n")
 
     sites_with_hits = 0
     scanned_count = 0
@@ -226,16 +281,13 @@ def main():
             err_http = None
 
             if response is None:
-                # If HTTPS fails, try HTTP
                 response, _, err_http = get_response(f"http://{initial_domain}")
 
-            # Log any SSL warnings that occurred during the HTTPS attempt
             if ssl_note:
                 print(f"  -> [NOTE] {ssl_note}")
                 with open(ERRORS_FILE, 'a', encoding='utf-8') as f:
                     f.write(f"{timestamp} - {initial_domain} - SSL NOTE: {ssl_note}\n")
 
-            # If both attempts failed, log a connection error and continue
             if response is None:
                 with open(ERRORS_FILE, 'a', encoding='utf-8') as f:
                     f.write(f"{timestamp} - {initial_domain} - Connection Failure\n")
@@ -245,8 +297,6 @@ def main():
                 continue
 
             final_url = response.url
-            
-            # Always use the base domain for deduplication
             scan_key = get_base_domain(final_url)
             
             if not scan_key:
