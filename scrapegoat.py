@@ -21,6 +21,7 @@ LISTS_DIR = 'domain-lists'
 MATCHES_FILE = os.path.join(LOGS_DIR, 'matches.log')
 NO_MATCHES_FILE = os.path.join(LOGS_DIR, 'no_matches.log')
 ERRORS_FILE = os.path.join(LOGS_DIR, 'errors.log')
+DEFAULT_MAX_LINE_CHARS = 4096
 
 # --- Globals for thread safety ---
 print_lock = Lock()
@@ -31,7 +32,7 @@ scanned_count = 0
 
 def load_config(config_filename):
     """Parses the INI configuration file."""
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(interpolation=None)
     if not os.path.exists(config_filename):
         return None
     config.read(config_filename)
@@ -40,10 +41,12 @@ def load_config(config_filename):
 def get_default_list_name(config):
     """Finds the list marked as default in the config."""
     for section in config.sections():
-        if config.has_option(section, 'default') and config.getboolean(section, 'default'):
+        if section != 'settings' and config.has_option(section, 'default') and config.getboolean(section, 'default'):
             return section
-    if config.sections():
-        return config.sections()[0]
+    # Fallback if no default is set
+    for section in config.sections():
+        if section != 'settings':
+            return section
     return None
 
 def count_csv_entries(filename):
@@ -199,7 +202,7 @@ def find_words_in_response(response, words_to_find):
                     unique_element_texts.add(element_text)
     return found_matches
 
-def scan_domain(domain, words, total_domains, no_color):
+def scan_domain(domain, words, total_domains, no_color, max_line_chars):
     """Worker function to scan a single domain."""
     global scanned_count, sites_with_hits
     
@@ -262,14 +265,22 @@ def scan_domain(domain, words, total_domains, no_color):
                 header = f"{timestamp} - {scan_key} ({domain}):\n"
                 f.write(header)
                 for phrase, element_text in matches:
-                    f.write(f"  - [{phrase}]: {element_text}\n")
+                    # Truncate text if it exceeds the max_line_chars
+                    if len(element_text) > max_line_chars:
+                        log_text = element_text[:max_line_chars] + '... [TRUNCATED]'
+                    else:
+                        log_text = element_text
+                    
+                    f.write(f"  - [{phrase}]: {log_text}\n")
+                    
                     with print_lock:
                         if not no_color:
                             pattern = re.compile(re.escape(phrase), re.IGNORECASE)
-                            colored_text = pattern.sub(lambda m: f"{Fore.GREEN}{m.group(0)}{Style.RESET_ALL}", element_text)
+                            # Colorize the truncated text for console output
+                            colored_text = pattern.sub(lambda m: f"{Fore.GREEN}{m.group(0)}{Style.RESET_ALL}", log_text)
                             print(f"    - [{phrase}]: {colored_text}")
                         else:
-                            print(f"    - [{phrase}]: {element_text}")
+                            print(f"    - [{phrase}]: {log_text}")
                 f.write("\n")
         else:
             with open(NO_MATCHES_FILE, 'a', encoding='utf-8') as f:
@@ -301,6 +312,9 @@ def main():
         create_example_file(
             CONFIG_FILE,
             '# Scrape Goat Configuration\n\n'
+            '[settings]\n'
+            '# Max characters per line in matches.log before truncating\n'
+            'max_line_chars = 4096\n\n'
             '[hatch-act]\n'
             'url = https://raw.githubusercontent.com/cisagov/dotgov-data/main/current-federal.csv\n'
             'default = yes\n'
@@ -312,7 +326,13 @@ def main():
         print(f"An example '{CONFIG_FILE}' has been created.")
         return
 
+    # Read global settings
+    max_line_chars = config.getint('settings', 'max_line_chars', fallback=DEFAULT_MAX_LINE_CHARS)
+
     default_list_name = get_default_list_name(config)
+    if default_list_name is None:
+        print(f"{Fore.RED}Error: No domain lists are defined in '{CONFIG_FILE}'.")
+        return
 
     parser = argparse.ArgumentParser(description="Scan websites for keywords and phrases from a file.")
     parser.add_argument('-i', '--input', type=str, help=f'Specify a custom local input file (in {LISTS_DIR}/), overriding config.')
@@ -325,9 +345,10 @@ def main():
     args = parser.parse_args()
     
     selected_list_name = args.list_name
-    if not selected_list_name or not config.has_section(selected_list_name):
+    if not config.has_section(selected_list_name):
         print(f"{Fore.RED}Error: List name '{selected_list_name}' not found in {CONFIG_FILE}.")
-        print(f"Available lists are: {', '.join(config.sections())}")
+        available = [s for s in config.sections() if s != 'settings']
+        print(f"Available lists are: {', '.join(available)}")
         return
     
     try:
@@ -383,13 +404,12 @@ def main():
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
             # Submit all domains to the executor
-            futures = [executor.submit(scan_domain, domain, words, len(domains), args.no_color) for domain in domains]
+            futures = [executor.submit(scan_domain, domain, words, len(domains), args.no_color, max_line_chars) for domain in domains]
             # Wait for all futures to complete (or for KeyboardInterrupt)
             concurrent.futures.wait(futures)
 
     except KeyboardInterrupt:
         print("\n\n--- Scan Interrupted by User (Ctrl+C) ---")
-        # The executor will be shut down automatically by the 'with' statement
     
     finally:
         print("\n--- Scan Summary ---")
