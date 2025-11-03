@@ -165,16 +165,26 @@ def parse_keywords(keyword_string):
 
 def get_response(url):
     """Attempts to get a response from a URL, handling SSL errors."""
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'}
+    # Using a more modern and common User-Agent and headers
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+    }
     ssl_note = None
     try:
-        response = requests.get(url, headers=headers, timeout=10, verify=True, allow_redirects=True)
+        # Increased timeout from 10 to 15 seconds
+        response = requests.get(url, headers=headers, timeout=15, verify=True, allow_redirects=True)
         response.raise_for_status()
         return response, None, None
     except requests.exceptions.SSLError as e:
         ssl_note = f"SSL verification failed ({e}), but proceeding with the scan."
         try:
-            response = requests.get(url, headers=headers, timeout=10, verify=False, allow_redirects=True)
+            # Increased timeout from 10 to 15 seconds
+            response = requests.get(url, headers=headers, timeout=15, verify=False, allow_redirects=True)
             response.raise_for_status()
             return response, ssl_note, None
         except requests.exceptions.RequestException as e_retry:
